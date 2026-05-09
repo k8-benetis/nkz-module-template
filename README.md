@@ -99,6 +99,39 @@ Add an ingress rule routing `/api/MODULE_NAME` → `MODULE_NAME-api-service:8000
 
 ---
 
+## NGSI-LD / Orion-LD queries
+
+If your module backend queries Orion-LD directly (not through the entity-manager API), you MUST follow the platform's canonical header pattern. Incorrect headers cause tenant isolation failures — entities become invisible to your module.
+
+### The rule: always use `inject_fiware_headers()`
+
+The template includes a ready-to-use function at `backend/app/common/ngsi_headers.py`:
+
+```python
+from app.common.ngsi_headers import inject_fiware_headers
+
+# GET request (no body, @context via Link header)
+headers = inject_fiware_headers({}, tenant_id)
+
+# POST with @context in body (Content-Type: application/ld+json, no Link)
+headers = inject_fiware_headers({}, tenant_id, has_context_in_body=True)
+```
+
+This sends ALL required headers:
+- `NGSILD-Tenant` (ETSI NGSI-LD standard) + `Fiware-Service` (legacy FIWARE v2) — **both normalized**
+- `Fiware-ServicePath: /`
+- `Content-Type` + `Link` @context (mutually exclusive per spec)
+- `Accept: application/ld+json`
+
+### NEVER
+
+- Send only one tenant header — always send **both** `NGSILD-Tenant` AND `Fiware-Service`
+- Mix `Content-Type: application/ld+json` with a `Link` header (ETSI spec violation)
+- Hardcode `CONTEXT_URL` — always use `os.getenv("CONTEXT_URL", "http://api-gateway-service:5000/ngsi-ld-context.json")`
+- Skip tenant normalization — unnormalized IDs cause MongoDB namespace mismatches
+
+---
+
 ## Slots
 
 Edit `src/slots/index.ts` to register your components in host slots:

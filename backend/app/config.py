@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Service-to-service authentication
     module_management_key: str = ""
     
+    # NGSI-LD / Orion-LD
+    orion_ld_url: str = "http://orion-ld-service:1026"
+    context_url: str = "http://api-gateway-service:5000/ngsi-ld-context.json"
+
     # Database (optional - uncomment if using)
     # database_url: str = ""
     
