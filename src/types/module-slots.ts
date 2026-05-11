@@ -1,21 +1,13 @@
-import type React from 'react';
-
-export type SlotType =
-  | 'entity-tree'
-  | 'map-layer'
-  | 'context-panel'
-  | 'bottom-panel'
-  | 'layer-toggle'
-  | 'dashboard-widget'
-  | 'admin-tab';
-
-export interface SlotWidgetDefinition {
-  id: string;
-  moduleId: string;
-  component: string;
-  localComponent?: React.ComponentType<any>;
-  priority?: number;
-  props?: Record<string, unknown>;
-}
-
-export type ModuleViewerSlots = Partial<Record<SlotType, SlotWidgetDefinition[]>>;
+/**
+ * Slot type definitions for Nekazari modules.
+ *
+ * Re-exported from @nekazari/sdk — the canonical source of truth.
+ * This file exists for backward compatibility with existing module code.
+ * New code should import directly from '@nekazari/sdk'.
+ */
+export type {
+  SlotType,
+  SlotWidgetDefinition,
+  ModuleViewerSlots,
+  NKZModuleRegistration,
+} from '@nekazari/sdk';
