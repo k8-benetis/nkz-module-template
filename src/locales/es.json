@@ -1,8 +1,9 @@
 {
-  "dev": {
+  "module": {
     "title": "MODULE_DISPLAY_NAME",
-    "shellNote": "Shell de desarrollo — no forma parte del bundle de producción.",
-    "buildInstructions": "Ejecuta {{cmd}} para generar {{out}} y súbelo a MinIO."
+    "tenant": "Tenant",
+    "notAuthenticated": "No autenticado.",
+    "placeholder": "Sustituye esta página por la UI principal de tu módulo."
   },
   "slot": {
     "authRequired": "Autenticación requerida.",

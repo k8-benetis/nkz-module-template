@@ -1,14 +1,13 @@
 /**
  * ExampleSlot — replace with your actual slot component.
  *
- * Slot components render inside host-provided containers.
- * - Access viewer context via useViewer() and useAuth() from @nekazari/sdk
- * - React, SDK and UI-Kit are externalized — do NOT import them from node_modules
- *   in production; they come from the host via window globals.
- * - Keep panels responsive (300–600px wide).
+ * Slot components render inside host-provided containers, wrapped by the
+ * host's NKZProvider. All `@nekazari/module-kit` hooks resolve automatically.
+ *
+ * Keep panels responsive (300–600px wide).
  */
 import React, { useState } from 'react';
-import { useViewer, useAuth, useTranslation } from '@nekazari/sdk';
+import { useAuth, useI18n } from '@nekazari/module-kit';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface ExampleSlotProps {
@@ -16,8 +15,7 @@ interface ExampleSlotProps {
 }
 
 export const ExampleSlot: React.FC<ExampleSlotProps> = ({ className }) => {
-  const { t } = useTranslation('template');
-  const { selectedEntityId } = useViewer();
+  const { t } = useI18n();
   const { isAuthenticated, user } = useAuth();
   const [loading, setLoading] = useState(false);
 
@@ -33,9 +31,9 @@ export const ExampleSlot: React.FC<ExampleSlotProps> = ({ className }) => {
   return (
     <div className={`p-4 space-y-3 ${className ?? ''}`}>
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800">{t('dev.title')}</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t('module.title')}</h3>
         <button
-          onClick={() => setLoading(l => !l)}
+          onClick={() => setLoading((l) => !l)}
           className="p-1 rounded hover:bg-slate-100 text-slate-500"
           aria-label={t('slot.refreshAria')}
         >
@@ -44,10 +42,6 @@ export const ExampleSlot: React.FC<ExampleSlotProps> = ({ className }) => {
       </div>
 
       <div className="text-xs text-slate-500 space-y-1 bg-slate-50 rounded p-2">
-        <div className="flex justify-between gap-2">
-          <span>{t('slot.entity')}</span>
-          <span className="font-mono text-slate-700 truncate">{selectedEntityId ?? '—'}</span>
-        </div>
         <div className="flex justify-between gap-2">
           <span>{t('slot.user')}</span>
           <span className="text-slate-700 truncate">{user?.email ?? '—'}</span>

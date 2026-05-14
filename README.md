@@ -2,7 +2,7 @@
 
 Starter template for building **external modules** for the Nekazari platform.
 
-Modules compile to a single IIFE bundle (`dist/nkz-module.js`) that is uploaded to MinIO and loaded at runtime by the host via `<script>` injection. No build-time coupling to the host.
+Modules compile to a single IIFE bundle (`dist/nkz-module.js`) plus a `dist/manifest.json`. Both are uploaded to MinIO and loaded at runtime by the host. No build-time coupling to the host.
 
 ---
 
@@ -11,19 +11,19 @@ Modules compile to a single IIFE bundle (`dist/nkz-module.js`) that is uploaded 
 ```bash
 git clone https://github.com/nkz-os/nkz-module-template.git my-module
 cd my-module
-npm install
+pnpm install
 ```
 
 Do a **find-and-replace** across the repo for these placeholders:
 
 | Placeholder | Example value | Where |
 |-------------|---------------|-------|
-| `MODULE_NAME` | `soil-sensor` | package.json, vite.config.ts, k8s/, SQL |
-| `MODULE_DISPLAY_NAME` | `Soil Sensor` | App.tsx, k8s/, SQL, manifest.json |
-| `MODULE_ROUTE` | `/soil-sensor` | manifest.json, SQL |
+| `MODULE_NAME` | `soil-sensor` | package.json (`name`, `nkz.moduleId`), Module.tsx (`id`), k8s/, SQL |
+| `MODULE_DISPLAY_NAME` | `Soil Sensor` | Module.tsx (`displayName`), locales/, k8s/, SQL |
+| `MODULE_ROUTE` | `/soil-sensor` | Module.tsx (`route`), SQL |
 | `YOUR_ORG` | `acme-corp` | k8s/backend-deployment.yaml, SQL |
 
-Then update `manifest.json` with your module's metadata.
+Then edit `src/Module.tsx` to declare your slots, accent colour, navigation entry, permissions, and data dependencies.
 
 ---
 
@@ -32,55 +32,139 @@ Then update `manifest.json` with your module's metadata.
 ```
 my-module/
 ├── src/
-│   ├── moduleEntry.ts          # IIFE entry — calls window.__NKZ__.register()
+│   ├── Module.tsx              # SINGLE SOURCE OF TRUTH — defineModule({...})
+│   ├── App.tsx                 # Main page component (rendered at route)
+│   ├── main.tsx                # Dev-only entry (Vite) — wraps in MockProvider
 │   ├── slots/index.ts          # Declare which host slots you occupy
 │   ├── components/slots/       # Slot React components
-│   ├── hooks/                  # Custom hooks
-│   ├── services/               # API client
-│   └── types/global.d.ts       # Host globals (window.__NKZ__, etc.)
+│   ├── locales/{en,es}.json    # i18n bundles
+│   └── types/                  # TypeScript types
 ├── backend/                    # FastAPI backend (optional, delete if unused)
 ├── k8s/
 │   ├── backend-deployment.yaml # K8s Deployment + Service for backend
 │   └── registration.sql        # Insert/update marketplace_modules
-├── manifest.json               # Module metadata
-├── vite.config.ts              # Uses @nekazari/module-builder preset
-└── dist/nkz-module.js          # Build output — upload this to MinIO
+├── vite.config.ts              # One-liner: defineConfig(nkzModulePreset())
+├── package.json                # nkz.moduleId points here
+└── dist/
+    ├── nkz-module.js           # Build output — upload to MinIO
+    └── manifest.json           # Auto-generated from Module.tsx
 ```
+
+---
+
+## `defineModule()` — the single source of truth
+
+Edit `src/Module.tsx`:
+
+```tsx
+import { defineModule } from '@nekazari/module-kit';
+import { lazy } from 'react';
+import { moduleSlots } from './slots';
+
+const MainPage = lazy(() => import('./App'));
+
+export default defineModule({
+  id: 'soil-sensor',
+  displayName: 'Soil Sensor',
+  version: '1.0.0',
+  hostApiVersion: '^2.0.0',
+  accent: { base: '#A16207', soft: '#FEF3C7', strong: '#713F12' },
+  icon: 'sprout',
+  main: MainPage,
+  route: '/soil-sensor',
+  navigation: { section: 'modules', priority: 60 },
+  slots: moduleSlots,
+  api: { basePath: '/api/soil-sensor' },          // optional — only if backend
+  requiredRoles: ['Farmer', 'TenantAdmin'],
+  requiredPlan: 'basic',
+  data: {
+    entities: ['AgriParcel', 'AgriSoil'],         // CSP-of-data allowlist
+    timeseries: ['soil_observations'],
+  },
+});
+```
+
+The `dist/manifest.json` is auto-emitted from this declaration. You don't write it by hand.
+
+---
+
+## Hooks — the only way to talk to the platform
+
+All hooks from `@nekazari/module-kit` resolve inside the host (production) or against in-memory mocks (`pnpm run dev`).
+
+```ts
+const { user, tenantId, roles, hasRole, hasPlan } = useAuth();
+const { t, lang, setLang } = useI18n();
+const { emit, on } = usePlatformEvents();              // namespaced to module:<id>:
+
+// NGSI-LD entities (CRUD + cache via TanStack Query)
+const { data: parcels } = useEntities('AgriParcel', { q: 'category=="vineyard"' });
+const { data: parcel } = useEntity('urn:ngsi-ld:AgriParcel:42');
+const { mutateAsync: createParcel } = useCreateEntity();
+
+// Timescale
+const { data: temps } = useTimeseries({
+  entityId: 'urn:ngsi-ld:WeatherObserved:station-1',
+  attribute: 'temperature',
+  from: new Date(Date.now() - 7 * 86400_000),
+  to: new Date(),
+});
+
+// File storage scoped to tenants/<tenant>/modules/<id>/
+const { upload, getUrl } = useFiles();
+const { url } = await upload(file, 'reports/2026/foo.pdf');
+
+// Your own backend (basePath from defineModule({ api }))
+const { data: forecast } = useGet<Forecast>('/forecast/today');
+const { mutateAsync: createOrder } = usePost<{ ok: boolean }, OrderBody>('/orders');
+```
+
+You never write `fetch`, never handle JWT cookies, never construct `Fiware-Service` headers.
 
 ---
 
 ## Build
 
 ```bash
-npm run build:module
-# → dist/nkz-module.js  (~50–300 KB depending on your dependencies)
+pnpm run build:module
+# → dist/nkz-module.js   (IIFE bundle, ~50–300 KB depending on dependencies)
+# → dist/manifest.json   (public metadata for the host + gateway CSP)
 ```
 
 The `@nekazari/module-builder` preset enforces:
 - **IIFE format** — single self-executing bundle
-- **Classic JSX runtime** — `React.createElement()`, not `_jsx()` (required for UMD React global)
-- **Externalized dependencies** — React, ReactDOM, react-router-dom, @nekazari/sdk, @nekazari/ui-kit are mapped to window globals provided by the host. Never bundle them.
+- **Classic JSX runtime** — required for the UMD React global
+- **Externalized dependencies** — React, ReactDOM, react-router-dom, `@nekazari/*` mapped to window globals. Never bundle them.
+
+---
+
+## Local development
+
+```bash
+pnpm run dev
+# Vite dev server at http://localhost:5003
+# Wraps the module in MockProvider — useAuth/useOrion/useFiles/etc. return
+# in-memory fixtures, no platform required.
+```
+
+For integration with a real backend, set `VITE_PROXY_TARGET=https://your-api-domain` in `.env`.
 
 ---
 
 ## Deploy
 
-### 1. Upload bundle to MinIO
+### 1. Upload bundle + manifest to MinIO
 
 ```bash
-# From the server (port-forward MinIO first):
-sudo kubectl port-forward -n nekazari svc/minio-service 9000:9000 &
-mc alias set minio http://localhost:9000 minioadmin minioadmin
-mc cp dist/nkz-module.js minio/nekazari-frontend/modules/MODULE_NAME/nkz-module.js \
+sudo mc cp dist/nkz-module.js minio/nekazari-frontend/modules/MODULE_NAME/nkz-module.js \
    --attr "Content-Type=application/javascript"
+sudo mc cp dist/manifest.json minio/nekazari-frontend/modules/MODULE_NAME/manifest.json \
+   --attr "Content-Type=application/json"
 ```
-
-Never write directly to MinIO's `/data/` filesystem — use the S3 API.
 
 ### 2. Register in the database
 
 ```bash
-# Run registration.sql once per environment:
 kubectl exec -n nekazari deployment/postgresql -- \
   psql -U postgres -d nekazari -f /tmp/registration.sql
 ```
@@ -99,42 +183,21 @@ Add an ingress rule routing `/api/MODULE_NAME` → `MODULE_NAME-api-service:8000
 
 ---
 
-## NGSI-LD / Orion-LD queries
-
-If your module backend queries Orion-LD directly (not through the entity-manager API), you MUST follow the platform's canonical header pattern. Incorrect headers cause tenant isolation failures — entities become invisible to your module.
-
-### The rule: always use `inject_fiware_headers()`
-
-The template includes a ready-to-use function at `backend/app/common/ngsi_headers.py`:
-
-```python
-from app.common.ngsi_headers import inject_fiware_headers
-
-# GET request (no body, @context via Link header)
-headers = inject_fiware_headers({}, tenant_id)
-
-# POST with @context in body (Content-Type: application/ld+json, no Link)
-headers = inject_fiware_headers({}, tenant_id, has_context_in_body=True)
-```
-
-This sends ALL required headers:
-- `NGSILD-Tenant` (ETSI NGSI-LD standard) + `Fiware-Service` (legacy FIWARE v2) — **both normalized**
-- `Fiware-ServicePath: /`
-- `Content-Type` + `Link` @context (mutually exclusive per spec)
-- `Accept: application/ld+json`
-
-### NEVER
-
-- Send only one tenant header — always send **both** `NGSILD-Tenant` AND `Fiware-Service`
-- Mix `Content-Type: application/ld+json` with a `Link` header (ETSI spec violation)
-- Hardcode `CONTEXT_URL` — always use `os.getenv("CONTEXT_URL", "http://api-gateway-service:5000/ngsi-ld-context.json")`
-- Skip tenant normalization — unnormalized IDs cause MongoDB namespace mismatches
-
----
-
 ## Slots
 
 Edit `src/slots/index.ts` to register your components in host slots:
+
+```ts
+import { ExampleSlot } from '../components/slots/ExampleSlot';
+
+export const moduleSlots = {
+  'context-panel': [
+    { id: 'soil-sensor-panel', component: ExampleSlot, priority: 10 },
+  ],
+};
+```
+
+Available slot types:
 
 | Slot | Where it renders |
 |------|-----------------|
@@ -145,41 +208,31 @@ Edit `src/slots/index.ts` to register your components in host slots:
 | `entity-tree` | Context menu in the entity tree |
 | `dashboard-widget` | Card in the tenant dashboard |
 
+The module-kit translates your `{id, component, priority}` entries into the runtime `SlotWidgetDefinition` shape automatically — `component` is the actual React reference, not a string.
+
+---
+
+## CSP-of-data (api-gateway enforcement)
+
+When the bundle calls a platform API, the SDK injects `X-Module-Id`. The gateway reads it, fetches your module's `manifest.json` from MinIO, and validates that the requested `type=` (NGSI-LD) or hypertable (Timescale) appears in your declared `data.entities` / `data.timeseries`.
+
+- **No `data.entities` declared** → fail-open (legacy modules keep working).
+- **`data.entities: ['*']`** → wildcard, opt out of enforcement (not recommended).
+- **`data.entities: ['AgriParcel']`** → only `?type=AgriParcel` is allowed; anything else returns 403.
+
+Declare exactly what you need. This is the platform's lightweight defence-in-depth — no replacement for sandboxing.
+
 ---
 
 ## Build rules (critical)
 
-- **JSX runtime must be `classic`** — `tsconfig.json` has `"jsx": "react"` and vite preset uses `jsxRuntime: 'classic'`. The automatic runtime emits `_jsx()` which doesn't exist on the UMD `window.React` global.
-- **Never bundle externalized deps** — React, ReactDOM, react-router-dom, @nekazari/sdk, @nekazari/ui-kit. They come from the host. Bundling them creates two React instances and breaks hooks.
-- **Web workers must use `?worker&inline`** — e.g. `import MyWorker from './worker?worker&inline'`. Without `&inline`, Vite generates a separate file with an absolute path that breaks when loaded from MinIO.
-- **No Module Federation** — the host uses IIFE-only loading. `@originjs/vite-plugin-federation` is dead, do not use it.
-
----
-
-## Local development
-
-```bash
-npm run dev
-# Starts a Vite dev server at http://localhost:5003
-# Full integration (slots, auth) requires the host app.
-# Set VITE_PROXY_TARGET=https://your-api-domain in .env to proxy API calls.
-```
-
-Copy `env.example` to `.env` and fill in your values.
-
----
-
-## DataHub compatibility
-
-If your module collects timeseries data, the DataHub module can visualise it in a Data Canvas without extra frontend work.
-
-- **Data in platform TimescaleDB**: nothing needed — DataHub finds it automatically.
-- **Data in an external system**: implement a `GET /api/timeseries/entities/{id}/data` endpoint returning **Apache Arrow IPC** (`float64` epoch seconds, `float64` value), declare `source` in the NGSI-LD entity attribute, and set `TIMESERIES_ADAPTER_<SOURCE>_URL` in the DataHub BFF.
-
-Full contract: [ADAPTER_SPEC.md](https://github.com/nkz-os/nkz-module-data-hub/blob/main/ADAPTER_SPEC.md)
+- **JSX runtime must be `classic`** — `tsconfig.json` has `"jsx": "react"`. The preset uses `jsxRuntime: 'classic'`. Automatic runtime emits `_jsx()` which doesn't exist on the UMD `window.React` global.
+- **Never bundle externalized deps** — React, ReactDOM, react-router-dom, `@nekazari/*`. They come from the host. Bundling creates two React instances and breaks hooks.
+- **Web workers must use `?worker&inline`** — `import MyWorker from './worker?worker&inline'`. Without `&inline`, Vite emits a separate file that fails when loaded from MinIO.
+- **No Module Federation** — the host uses IIFE-only loading.
 
 ---
 
 ## License
 
-AGPL-3.0
+Apache-2.0 — you are free to license your derived module under any terms.
