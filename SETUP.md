@@ -51,10 +51,9 @@ npm run build:module
 ## 7. Upload to MinIO
 
 ```bash
-# On the server with port-forward active:
-mc cp dist/nkz-module.js \
-   minio/nekazari-frontend/modules/MODULE_NAME/nkz-module.js \
-   --attr "Content-Type=application/javascript"
+# On the server or with mc alias configured:
+mc cp --recursive dist/ minio-srv/nekazari-frontend/modules/MODULE_NAME/
+# Uploads: remoteEntry.js, mf-manifest.json, manifest.json, assets/
 ```
 
 ## 8. Register in database

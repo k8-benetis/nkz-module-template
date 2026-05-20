@@ -2,7 +2,7 @@
 
 Starter template for building **external modules** for the Nekazari platform.
 
-Modules compile to a single IIFE bundle (`dist/nkz-module.js`) plus a `dist/manifest.json`. Both are uploaded to MinIO and loaded at runtime by the host. No build-time coupling to the host.
+Modules are built as **Module Federation 2.0 remotes** (`dist/remoteEntry.js` + `dist/mf-manifest.json` + `dist/assets/`) plus a `dist/manifest.json`. All are uploaded to MinIO and loaded at runtime by the host via `loadRemote()`. No build-time coupling to the host.
 
 ---
 
@@ -46,8 +46,10 @@ my-module/
 ├── vite.config.ts              # One-liner: defineConfig(nkzModulePreset())
 ├── package.json                # nkz.moduleId points here
 └── dist/
-    ├── nkz-module.js           # Build output — upload to MinIO
-    └── manifest.json           # Auto-generated from Module.tsx
+    ├── remoteEntry.js          # Federation remote entry
+    ├── mf-manifest.json        # Federation manifest (shared deps + exposes)
+    ├── manifest.json           # NKZ data manifest (auto-generated)
+    └── assets/                 # Sync + async chunks
 ```
 
 ---
@@ -126,15 +128,16 @@ You never write `fetch`, never handle JWT cookies, never construct `Fiware-Servi
 ## Build
 
 ```bash
-pnpm run build:module
-# → dist/nkz-module.js   (IIFE bundle, ~50–300 KB depending on dependencies)
-# → dist/manifest.json   (public metadata for the host + gateway CSP)
+pnpm run build
+# → dist/remoteEntry.js     (federation remote entry)
+# → dist/mf-manifest.json   (shared deps + exposes)
+# → dist/manifest.json      (NKZ metadata for host + gateway CSP)
+# → dist/assets/            (sync + async chunks)
 ```
 
-The `@nekazari/module-builder` preset enforces:
-- **IIFE format** — single self-executing bundle
-- **Classic JSX runtime** — required for the UMD React global
-- **Externalized dependencies** — React, ReactDOM, react-router-dom, `@nekazari/*` mapped to window globals. Never bundle them.
+The `@nekazari/module-builder@^2.0.3` preset (`nkzModulePreset()`) configures Module Federation 2.0 via `@module-federation/vite`:
+- **Singleton shared deps** — `react`, `react-dom`, `react-router-dom`, `@nekazari/*`, `i18next`, `react-i18next` resolved by the host at runtime. Never bundle them.
+- **`src/Module.tsx`** → `export default defineModule({...})` is the single entry point. The builder auto-generates the federation expose.
 
 ---
 
@@ -153,13 +156,10 @@ For integration with a real backend, set `VITE_PROXY_TARGET=https://your-api-dom
 
 ## Deploy
 
-### 1. Upload bundle + manifest to MinIO
+### 1. Upload entire dist/ to MinIO
 
 ```bash
-sudo mc cp dist/nkz-module.js minio/nekazari-frontend/modules/MODULE_NAME/nkz-module.js \
-   --attr "Content-Type=application/javascript"
-sudo mc cp dist/manifest.json minio/nekazari-frontend/modules/MODULE_NAME/manifest.json \
-   --attr "Content-Type=application/json"
+mc cp --recursive dist/ minio-srv/nekazari-frontend/modules/MODULE_NAME/
 ```
 
 ### 2. Register in the database
@@ -169,7 +169,7 @@ kubectl exec -n nekazari deployment/postgresql -- \
   psql -U postgres -d nekazari -f /tmp/registration.sql
 ```
 
-Or insert manually and update `remote_entry_url = '/modules/MODULE_NAME/nkz-module.js'`.
+Or insert manually and set `remote_entry_url = '/modules/MODULE_NAME/mf-manifest.json'`.
 
 ### 3. Deploy backend (if your module has one)
 
@@ -226,10 +226,9 @@ Declare exactly what you need. This is the platform's lightweight defence-in-dep
 
 ## Build rules (critical)
 
-- **JSX runtime must be `classic`** — `tsconfig.json` has `"jsx": "react"`. The preset uses `jsxRuntime: 'classic'`. Automatic runtime emits `_jsx()` which doesn't exist on the UMD `window.React` global.
-- **Never bundle externalized deps** — React, ReactDOM, react-router-dom, `@nekazari/*`. They come from the host. Bundling creates two React instances and breaks hooks.
-- **Web workers must use `?worker&inline`** — `import MyWorker from './worker?worker&inline'`. Without `&inline`, Vite emits a separate file that fails when loaded from MinIO.
-- **No Module Federation** — the host uses IIFE-only loading.
+- **Keep `i18next@^23.11.0` and `react-i18next@^14.1.0`** — must match the host's singleton versions to avoid federation runtime version mismatch warnings.
+- **Never bundle shared deps** — React, ReactDOM, react-router-dom, `@nekazari/*`, i18next, react-i18next. They come from the host as federation singletons. Bundling creates two instances and breaks hooks.
+- **`main` wrapper pattern** — prefer wrapping `lazy(() => import('./App'))` in a regular function component for Suspense boundaries and context providers. See `nkz-module-vegetation-health/src/Module.tsx`.
 
 ---
 
