@@ -6,9 +6,8 @@
 #   2. Build the IIFE bundle (dist/nkz-module.js) — uploaded as artifact
 #   3. Build and push the backend Docker image to GHCR (if module has a backend)
 #
-# After this workflow succeeds, manually upload dist/nkz-module.js to MinIO:
-#   mc cp nkz-module.js minio/nekazari-frontend/modules/MODULE_NAME/nkz-module.js \
-#      --attr "Content-Type=application/javascript"
+# After customizing for your module, add MinIO deploy + activation steps
+# for immutable versioned deploys (see nkz-module-vpn for reference).
 # =============================================================================
 
 name: Build and Push
@@ -96,6 +95,8 @@ jobs:
 
             - name: Build module bundle
               run: npm run build:module
+              env:
+                NKZ_VERSION_HASH: ${{ github.sha }}
 
             - name: Upload bundle artifact
               uses: actions/upload-artifact@v4
