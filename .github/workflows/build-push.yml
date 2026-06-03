@@ -158,6 +158,6 @@ jobs:
             contents: read
         uses: nkz-os/nkz/.github/workflows/_publish-module.yml@main
         with:
-            module_id: {{MODULE_ID}}
+            module_id: "{{MODULE_ID}}"
         secrets:
             INTERNAL_SERVICE_SECRET: ${{ secrets.INTERNAL_SERVICE_SECRET }}
