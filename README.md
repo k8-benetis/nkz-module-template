@@ -173,6 +173,8 @@ The publish step uses **GitHub OIDC** for authentication:
 - Org secret `INTERNAL_SERVICE_SECRET` configured in GitHub Actions secrets
 - Module registered in `marketplace_modules` (one-time SQL `INSERT`)
 
+> **⚠️ You do NOT need to create any secrets in your repo.** The secret is at the nkz-os organization level and all repos inherit it automatically. Never create per-repo copies.
+
 ---
 
 ## Slots
