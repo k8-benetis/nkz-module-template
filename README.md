@@ -156,30 +156,22 @@ For integration with a real backend, set `VITE_PROXY_TARGET=https://your-api-dom
 
 ## Deploy
 
-### 1. Upload entire dist/ to MinIO
+Push to `main`. That's it.
 
-```bash
-mc cp --recursive dist/ minio-srv/nekazari-frontend/modules/MODULE_NAME/
-```
+The included `.github/workflows/build-push.yml` handles everything via GitHub Actions:
 
-### 2. Register in the database
+1. **Tests** — frontend typecheck + backend tests
+2. **Build** — `pnpm run build:module` produces `dist/`
+3. **Publish** — uploads to immutable `modules/MODULE_NAME/<git-sha>/` on MinIO, flips the live pointer
 
-```bash
-kubectl exec -n nekazari deployment/postgresql -- \
-  psql -U postgres -d nekazari -f /tmp/registration.sql
-```
+The publish step uses **GitHub OIDC** for authentication:
+- Runner gets a signed JWT from `token.actions.githubusercontent.com`
+- `POST https://nkz.robotika.cloud/api/internal/modules/MODULE_NAME/publish`
+- No manual MinIO uploads. No `kubectl`. No database SQL.
 
-Or insert manually and set `remote_entry_url = '/modules/MODULE_NAME/mf-manifest.json'`.
-
-### 3. Deploy backend (if your module has one)
-
-```bash
-docker build -t ghcr.io/YOUR_ORG/MODULE_NAME-backend:v1.0.0 ./backend
-docker push ghcr.io/YOUR_ORG/MODULE_NAME-backend:v1.0.0
-kubectl apply -f k8s/backend-deployment.yaml -n nekazari
-```
-
-Add an ingress rule routing `/api/MODULE_NAME` → `MODULE_NAME-api-service:8000` before the generic `/api` catch-all.
+**Prerequisites (one-time, org-level — already done for nkz-os):**
+- Org secret `INTERNAL_SERVICE_SECRET` configured in GitHub Actions secrets
+- Module registered in `marketplace_modules` (one-time SQL `INSERT`)
 
 ---
 
