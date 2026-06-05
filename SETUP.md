@@ -24,7 +24,7 @@ Find-and-replace across all files:
 ## 3. Install dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ## 4. Configure environment
@@ -37,14 +37,14 @@ cp env.example .env
 ## 5. Develop
 
 ```bash
-npm run dev
+pnpm run dev
 # http://localhost:5003 — dev shell only, not the production slot
 ```
 
 ## 6. Build
 
 ```bash
-npm run build:module
+pnpm run build:module
 # → dist/nkz-module.js
 ```
 
