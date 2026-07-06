@@ -172,6 +172,21 @@ The publish step uses **GitHub OIDC** for authentication:
 **Prerequisites (one-time, org-level — already done for nkz-os):**
 - Org secret `INTERNAL_SERVICE_SECRET` configured in GitHub Actions secrets
 - Module registered in `marketplace_modules` (one-time SQL `INSERT`)
+- Module metadata includes gateway routing keys:
+  - `api_prefix` (for example `/api/MODULE_NAME`)
+  - `backend_service` (for example `http://MODULE_NAME-api-service:8000`)
+  - `backend_mount` (for example `/api/MODULE_NAME`)
+  - `requires_auth` (`true` by default)
+
+After first publish, verify metadata was preserved:
+
+```sql
+SELECT id, metadata->>'api_prefix', metadata->>'backend_service'
+FROM marketplace_modules
+WHERE id = 'MODULE_NAME';
+```
+
+If `api_prefix` is `NULL`, re-apply the routing metadata migration in `nkz` and invalidate the gateway `routes` cache.
 
 ---
 
