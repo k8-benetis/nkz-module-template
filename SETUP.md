@@ -11,7 +11,8 @@ cd my-module
 
 ## 2. Replace placeholders
 
-Find-and-replace across all files:
+Find-and-replace across all files (this includes `src/locales/*.json` and
+`src/moduleEntry.ts` — the substitution walks every file, not just config):
 
 | Placeholder | Replace with | Example |
 |-------------|--------------|---------|
@@ -20,6 +21,8 @@ Find-and-replace across all files:
 | `MODULE_ROUTE` | URL path | `/soil-sensor` |
 | `YOUR_ORG` | GitHub org | `acme-corp` |
 | `YOUR_NAME` | Author name | `Jane Smith` |
+
+Or run the interactive initializer: `bash scripts/init-module.sh`.
 
 ## 3. Install dependencies
 
@@ -31,7 +34,7 @@ pnpm install
 
 ```bash
 cp env.example .env
-# Edit .env — set VITE_PROXY_TARGET to your API domain
+# Edit .env — set VITE_PROXY_TARGET and VITE_API_URL to your API domain
 ```
 
 ## 5. Develop
@@ -45,22 +48,45 @@ pnpm run dev
 
 ```bash
 pnpm run build:module
-# → dist/nkz-module.js
+# → dist/remoteEntry.js, dist/mf-manifest.json, dist/assets/*
+#   (Module Federation 2.0 remote — see vite.config.ts / @nekazari/module-builder)
 ```
+
+Fill in your real i18n strings in `src/locales/en.json` / `es.json` before
+shipping — `ca.json` / `eu.json` / `fr.json` / `pt.json` ship as empty `{}`
+skeletons (i18next falls back to `en` for missing keys).
 
 ## 7. Upload to MinIO
 
 ```bash
-# On the server or with mc alias configured:
-mc cp --recursive dist/ minio-srv/nekazari-frontend/modules/MODULE_NAME/
-# Uploads: remoteEntry.js, mf-manifest.json, manifest.json, assets/
+# On the server with port-forward active — upload the whole dist/ directory,
+# not a single file. The host's federation runtime fetches remoteEntry.js and
+# chunks relative to mf-manifest.json's publicPath.
+mc cp --recursive dist/ minio/nekazari-frontend/modules/MODULE_NAME/
 ```
 
-## 8. Register in database
+## 8. Register in database (required)
 
 ```bash
 psql -U postgres -d nekazari -f k8s/registration.sql
 ```
+
+Your `marketplace_modules.metadata` must include routing keys used by api-gateway auto-proxy:
+
+- `api_prefix` (example: `/api/MODULE_NAME`)
+- `backend_service` (example: `http://MODULE_NAME-api-service:8000`)
+- `backend_mount` (example: `/api/MODULE_NAME`)
+- `requires_auth` (`true` unless the endpoint is intentionally public)
+
+Quick verification:
+
+```sql
+SELECT id, metadata->>'api_prefix', metadata->>'backend_service'
+FROM marketplace_modules
+WHERE id = 'MODULE_NAME';
+```
+
+After the first CI publish, entity-manager invalidates the api-gateway route cache automatically (`POST /internal/cache/invalidate` with `key=routes`). No manual cache flush is required.
 
 ## 9. Deploy backend (if any)
 
@@ -70,7 +96,13 @@ docker push ghcr.io/YOUR_ORG/MODULE_NAME-backend:v1.0.0
 kubectl apply -f k8s/backend-deployment.yaml -n nekazari
 ```
 
-Add ingress: `/api/MODULE_NAME` → `MODULE_NAME-api-service:8000`
+Do not add a dedicated `/api/MODULE_NAME` Ingress rule. Module API traffic should go through the platform `/api` catch-all and gateway auto-proxy, except for explicitly approved direct-ingress exceptions.
+
+This backend trusts api-gateway-injected headers (`X-Tenant-ID`, `X-User-ID`,
+`X-User-Roles`) — it never talks to Keycloak directly. Set
+`INTERNAL_SERVICE_SECRET` (K8s Secret `internal-service-secret`, org-level)
+for the `/internal/*` routes called by entity-manager and other in-cluster
+services; without it those routes always reject with 401.
 
 ## 10. Activate for tenants
 

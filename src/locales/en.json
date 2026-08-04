@@ -1,15 +1,11 @@
 {
-  "module": {
+  "example": {
     "title": "MODULE_DISPLAY_NAME",
-    "tenant": "Tenant",
-    "notAuthenticated": "Not authenticated.",
-    "placeholder": "Replace this page with your module's main UI."
-  },
-  "slot": {
+    "loading": "Loading…",
     "authRequired": "Authentication required.",
-    "refreshAria": "Refresh",
-    "entity": "Entity:",
-    "user": "User:",
-    "placeholder": "Replace this component with your module's functionality."
+    "entity": "Entity",
+    "user": "User",
+    "refresh": "Refresh",
+    "replaceHint": "Replace this component with your module's functionality."
   }
 }
