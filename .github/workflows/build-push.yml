@@ -146,10 +146,14 @@ jobs:
     # ==========================================================================
     # Publish MF2 remote (main only) via canonical OIDC workflow
     # ==========================================================================
+    # NOTE — DISABLED IN THE TEMPLATE (same reason as build-module/build-backend):
+    # the placeholder module_id "MODULE_NAME" is not registered in the platform,
+    # so publishing 404s ("Module not found"). After you replace the placeholders
+    # and register your module, re-enable by removing `false &&`.
     publish-module:
         name: Publish Module
         needs: test
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         permissions:
             id-token: write
             contents: read
