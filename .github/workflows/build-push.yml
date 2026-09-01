@@ -29,6 +29,43 @@ env:
 
 jobs:
     # ==========================================================================
+    # Placeholder guard
+    # ==========================================================================
+    # The template ships uppercase placeholders, and a placeholder image name is
+    # a syntactically VALID image reference — so a build that runs before
+    # scripts/init-module.sh publishes a real GHCR package under the placeholder
+    # name instead of failing. That is exactly how the stale
+    # lowercased placeholder packages on GHCR were created.
+    #
+    # This job derives the answer from BACKEND_IMAGE itself, so the build and
+    # publish jobs switch themselves on the moment init-module.sh has run.
+    # Do NOT gate them by hand.
+    guard:
+        name: Placeholder guard
+        runs-on: ubuntu-latest
+        outputs:
+            initialised: ${{ steps.check.outputs.initialised }}
+        steps:
+            - name: Check the module has been initialised
+              id: check
+              run: |
+                  # A container image reference cannot contain uppercase, so an
+                  # uppercase segment here means the template placeholders are
+                  # still in place. This check deliberately does NOT spell the
+                  # placeholder out: init-module.sh rewrites every occurrence of
+                  # it and would rewrite this test along with it, permanently
+                  # disabling the build.
+                  case "${BACKEND_IMAGE##*/}" in
+                      *[[:upper:]]*)
+                          echo "initialised=false" >> "$GITHUB_OUTPUT"
+                          echo "::notice title=Template not initialised::Placeholders are still in place. Run scripts/init-module.sh; build and publish stay skipped until then."
+                          ;;
+                      *)
+                          echo "initialised=true" >> "$GITHUB_OUTPUT"
+                          ;;
+                  esac
+
+    # ==========================================================================
     # Test
     # ==========================================================================
     test:
@@ -67,15 +104,14 @@ jobs:
     # ==========================================================================
     # Build Module Federation 2.0 remote
     # ==========================================================================
-    # NOTE — DISABLED IN THE TEMPLATE.
-    # The template ships placeholder ids (`MODULE_NAME` etc.) that fail the
-    # nkzModulePreset's kebab-case validator. After you fork the template
-    # and replace placeholders, restore this job by removing the `if: false`.
+    # Skipped while the template's placeholder ids are still in place (they fail
+    # the nkzModulePreset kebab-case validator). Enables itself automatically
+    # once scripts/init-module.sh has replaced them — see the `guard` job.
     build-module:
         name: Build MF2 Bundle
         runs-on: ubuntu-latest
-        needs: test
-        if: false
+        needs: [test, guard]
+        if: needs.guard.outputs.initialised == 'true'
         steps:
             - uses: actions/checkout@v4
 
@@ -105,13 +141,13 @@ jobs:
     # ==========================================================================
     # Build and push backend Docker image
     # ==========================================================================
-    # NOTE — DISABLED IN THE TEMPLATE for the same reason as above. Re-enable
-    # by removing `if: false` once placeholders are replaced.
+    # Skipped until the placeholders are replaced — see the `guard` job. Without
+    # this gate the image would publish as `MODULE_NAME-backend`.
     build-backend:
         name: Build Backend Image
         runs-on: ubuntu-latest
-        needs: test
-        if: ${{ false && github.event_name != 'pull_request' }}
+        needs: [test, guard]
+        if: ${{ needs.guard.outputs.initialised == 'true' && github.event_name != 'pull_request' }}
         permissions:
             contents: read
             packages: write
@@ -146,14 +182,13 @@ jobs:
     # ==========================================================================
     # Publish MF2 remote (main only) via canonical OIDC workflow
     # ==========================================================================
-    # NOTE — DISABLED IN THE TEMPLATE (same reason as build-module/build-backend):
-    # the placeholder module_id "MODULE_NAME" is not registered in the platform,
-    # so publishing 404s ("Module not found"). After you replace the placeholders
-    # and register your module, re-enable by removing `false &&`.
+    # Skipped until the placeholders are replaced — see the `guard` job. The
+    # placeholder module_id is not registered in the platform, so publishing 404s.
+    # Remember to register the module id before the first publish.
     publish-module:
         name: Publish Module
-        needs: test
-        if: ${{ false && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        needs: [test, guard]
+        if: ${{ needs.guard.outputs.initialised == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         permissions:
             id-token: write
             contents: read
